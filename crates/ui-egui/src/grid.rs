@@ -1741,8 +1741,9 @@ pub(crate) fn paint_headers(
     let full_col = |c: u32| sel.ranges.iter().any(|x| x.is_full_cols() && c >= x.start.col && c <= x.end.col);
     let full_row = |rr: u32| sel.ranges.iter().any(|x| x.is_full_rows() && rr >= x.start.row && rr <= x.end.row);
     let _ = bounds;
-    // The heading under the pointer is tinted, as in the desktop app.
-    let hover = p.ctx().pointer_hover_pos();
+    // The heading under the pointer is tinted, as in the desktop app. Headings are laid out in
+    // logical coordinates and mirrored afterwards on a right-to-left sheet, so the pointer is too.
+    let hover = p.ctx().pointer_hover_pos().map(|h| geo.mirror_pos(h));
     let mut done_cols = std::collections::HashSet::new();
     let mut done_rows = std::collections::HashSet::new();
     for (rows, cols, clip) in quads {
