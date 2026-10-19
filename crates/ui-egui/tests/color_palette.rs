@@ -71,3 +71,65 @@ fn more_colors_answers_through_take_result_and_cancel_answers_nothing() {
     }
     assert!(h.state().more.as_deref().is_some_and(|c| c.starts_with('#') && c.len() == 7));
 }
+
+fn app_harness() -> egui_kittest::Harness<'static, gridcraft_ui_egui::SheetApp> {
+    let mut s = gridcraft_engine::Session::new();
+    s.new_workbook();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_ui_state(
+        |ui, app: &mut gridcraft_ui_egui::SheetApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        gridcraft_ui_egui::SheetApp::new(s, Default::default()),
+    );
+    h.run_steps(4);
+    h
+}
+
+fn fill(h: &egui_kittest::Harness<'static, gridcraft_ui_egui::SheetApp>) -> gridcraft_engine::model::Fill {
+    let d = h.state().session.active().unwrap();
+    let sh = d.wb.active().unwrap();
+    d.wb.styles.get(sh.style_id(d.selection.active)).fill
+}
+
+#[test]
+fn more_colors_in_format_cells_keeps_the_dialog_and_fills_the_cell() {
+    let mut h = app_harness();
+    h.state_mut().open_dialog("formatCells", serde_json::json!({"tab": "Fill"}));
+    h.run_steps(3);
+    // Escape cancels the Colors window alone: Format Cells stays open.
+    h.get_by_label("More Colors…").click();
+    h.run_steps(3);
+    assert!(color_picker::is_open(&h.ctx), "the Colors window opens");
+    assert!(h.state().dialog.is_some(), "More Colors… leaves Format Cells open");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(!color_picker::is_open(&h.ctx));
+    assert!(h.state().dialog.is_some(), "Escape closes the Colors window, not Format Cells");
+    // OK hands the colour to the dialog's draft; the dialog's OK applies it to the cell.
+    h.get_by_label("More Colors…").click();
+    h.run_steps(3);
+    h.get_by_label("OK").click();
+    h.run_steps(3);
+    assert!(h.state().dialog.is_some());
+    assert_eq!(fill(&h), Default::default(), "nothing changes before the dialog's OK");
+    // The dialog's own OK button.
+    h.get_by_label("   OK   ").click();
+    h.run_steps(3);
+    assert!(h.state().dialog.is_none());
+    assert_ne!(fill(&h), Default::default(), "the More Colors colour fills the cell");
+}
+
+#[test]
+fn a_more_colors_answer_nobody_collects_expires() {
+    let mut h = harness("No Fill");
+    h.run_steps(2);
+    h.get_by_label("More Colors…").click();
+    h.run_steps(3);
+    h.get_by_label("OK").click();
+    // Taken in the next frames by the harness: one answer, once.
+    h.run_steps(3);
+    assert!(h.state().more.is_some());
+    assert!(color_picker::take_result(&h.ctx, "test").is_none(), "an answer is handed out once");
+}

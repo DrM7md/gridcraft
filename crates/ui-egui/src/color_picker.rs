@@ -76,9 +76,18 @@ struct MoreColors {
     hex: String,
 }
 
-/// The colour chosen in a Colors window opened by the palette with this `key`, once.
+/// The colour chosen in a Colors window opened by the palette with this `key`, once. The answer
+/// is kept for the frame OK was clicked in and the next one only: a caller that isn't drawn by
+/// then (its menu or dialog closed) never receives it later.
 pub fn take_result(ctx: &egui::Context, key: &str) -> Option<String> {
-    ctx.data_mut(|d| d.remove_temp::<String>(result_id(key)))
+    let now = ctx.cumulative_frame_nr();
+    let (color, made) = ctx.data_mut(|d| d.remove_temp::<(String, u64)>(result_id(key)))?;
+    (now <= made.saturating_add(1)).then_some(color)
+}
+
+/// True while the Colors window (More Colors…) is open.
+pub fn is_open(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<MoreColors>(more_id()).is_some())
 }
 
 /// A swatch; returns true when clicked.
@@ -169,6 +178,10 @@ pub fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, key: &st
     let keys = ui.input(|i| {
         [egui::Key::ArrowLeft, egui::Key::ArrowRight, egui::Key::ArrowUp, egui::Key::ArrowDown, egui::Key::Enter].map(|k| i.key_pressed(k))
     });
+    // The Colors window owns the keyboard while it is open (its Hex field, Enter for OK), and
+    // Enter with no highlighted swatch belongs to whatever holds the palette (OK in a dialog).
+    let keys = if is_open(ui.ctx()) { [false; 5] } else { keys };
+    let keys = [keys[0], keys[1], keys[2], keys[3], keys[4] && cur.is_some()];
     let rows: Vec<usize> = if high_contrast { vec![0, 6] } else { vec![0, 1, 2, 3, 4, 5, 6] };
     if keys[..4].iter().any(|k| *k) {
         cur = Some(match cur {
@@ -193,17 +206,17 @@ pub fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, key: &st
             }
         });
     }
-    if keys.iter().any(|k| *k) {
+    let (arrows, enter) = (keys[..4].iter().any(|k| *k), keys[4]);
+    if arrows || enter {
         ui.ctx().input_mut(|i| {
-            i.events.retain(|e| {
-                !matches!(
-                    e,
-                    egui::Event::Key {
-                        key: egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Enter,
-                        pressed: true,
-                        ..
-                    }
-                )
+            i.events.retain(|e| match e {
+                egui::Event::Key {
+                    key: egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown,
+                    pressed: true,
+                    ..
+                } => !arrows,
+                egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => !enter,
+                _ => true,
             });
         });
     }
@@ -299,7 +312,9 @@ pub fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, key: &st
         ui.ctx().data_mut(|d| {
             d.insert_temp(more_id(), MoreColors { key: key.to_string(), current: None, new: start, custom: false, hex: hex_of(start) })
         });
-        ui.close();
+        if ui.stack().iter().any(|s| matches!(s.info.kind, Some(egui::UiKind::Menu | egui::UiKind::Popup))) {
+            ui.close();
+        }
     }
     if picked.is_some() {
         ui.data_mut(|d| d.remove_temp::<Option<(usize, usize)>>(pal_id));
@@ -579,15 +594,16 @@ pub fn window(ctx: &egui::Context) {
                 });
             });
         });
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) || !open {
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) || !open {
         result = Some(None);
     }
     match result {
         Some(Some(c)) => {
             let key = st.key.clone();
+            let frame = ctx.cumulative_frame_nr();
             ctx.data_mut(|d| {
                 d.remove_temp::<MoreColors>(more_id());
-                d.insert_temp(result_id(&key), hex_of(c));
+                d.insert_temp(result_id(&key), (hex_of(c), frame));
             });
         }
         Some(None) => {
