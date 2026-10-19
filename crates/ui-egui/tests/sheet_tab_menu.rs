@@ -146,3 +146,48 @@ fn ctrl_drag_copies_a_tab_and_plain_drag_moves_it() {
     assert_eq!(after.len(), 4, "a plain drag moves");
     assert_eq!(after.last(), Some(&n[0]));
 }
+
+#[test]
+fn an_access_key_runs_its_entry_without_typing_into_the_cell() {
+    let mut h = harness();
+    let n = names(&h);
+    let at = tab(&h, &n[2]);
+    press(&mut h, at, PointerButton::Secondary, Modifiers::NONE);
+    // H is Hide's access key.
+    h.input_mut().events.push(Event::Text("h".into()));
+    h.run_steps(3);
+    let d = h.state().session.active().unwrap();
+    assert_ne!(d.wb.sheets[2].visibility, gridcraft_engine::model::Visibility::Visible, "H hid the sheet");
+    assert!(h.state().editor.is_none(), "and the grid didn't start editing a cell with it");
+}
+
+#[test]
+fn link_to_this_sheet_quotes_names_formulas_quote() {
+    let mut h = harness();
+    h.state_mut().session.execute("sheet.rename", json!({"sheet": 1, "name": "2024"})).unwrap();
+    h.run_steps(3);
+    let at = tab(&h, "2024");
+    press(&mut h, at, PointerButton::Secondary, Modifiers::NONE);
+    h.get_all_by_label("Link to this Sheet").find(|n| n.rect().top() > 250.0).expect("menu item").click();
+    // The copy is in the output of the frame that handled the click.
+    let mut copied = None;
+    for _ in 0..3 {
+        h.step();
+        copied = copied.or_else(|| {
+            h.output().platform_output.commands.iter().find_map(|c| match c {
+                egui::OutputCommand::CopyText(t) => Some(t.clone()),
+                _ => None,
+            })
+        });
+    }
+    assert_eq!(copied.as_deref(), Some("#'2024'!A1"));
+}
+
+#[test]
+fn access_key_labels_are_translated() {
+    let mut h = harness();
+    h.state_mut().ui.language = gridcraft_ui_egui::i18n::Language::PtBr;
+    h.state_mut().open_dialog("deleteCells", json!({}));
+    h.run_steps(3);
+    assert!(h.query_by_label("Linha inteira").is_some(), "Entire &row is shown translated");
+}
