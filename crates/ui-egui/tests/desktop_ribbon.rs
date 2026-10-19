@@ -45,7 +45,8 @@ fn every_tab_draws_its_commands() {
         ("View", "Freeze Panes"),
         ("Automate", "Command Palette"),
         ("Developer", "Macros"),
-        ("Help", "Help"),
+        // "Help" also names the tab itself, so ask for a command only the tab's body has.
+        ("Help", "Contact Support"),
     ] {
         assert!(TABS.contains(&name), "{name}");
         tab(&mut h, name);
@@ -88,4 +89,13 @@ fn the_ribbon_menu_hides_the_quick_access_toolbar_and_collapses_the_ribbon() {
     h.run_steps(3);
     assert!(h.state().ui.ribbon_collapsed);
     h.state_mut().run("ui.ribbonTab", json!({"tab": "Home"})).ok();
+}
+
+#[test]
+fn icon_only_pens_are_named_apart() {
+    let mut h = harness();
+    tab(&mut h, "Draw");
+    for pen in ["Pen: Black, 0.5 mm", "Pen: Red, 0.5 mm", "Pen: Blue, 1 mm", "Pen: Green, 1 mm"] {
+        assert_eq!(h.query_all_by_label(pen).count(), 1, "{pen}");
+    }
 }

@@ -3,8 +3,7 @@
 //! project's own artwork (`ribbon_art`).
 //!
 //! Every command the engine has is wired. A control the app doesn't have yet is still shown in its
-//! place: it says "Coming soon" when pointed at or clicked, and is listed in
-//! `docs/roadmap/ribbon-coming-soon.md`.
+//! place, greyed out: it says "Not available yet" when pointed at and does nothing when clicked.
 
 use super::*;
 use crate::ribbon_art::{Art, paint};
